@@ -12,7 +12,13 @@ let raycaster = new THREE.Raycaster();
 
 const FRUSTUM_SIZE = 23;     // 攝影機視角大小
 // 拖曳平面：用來接收滑鼠射線，計算拖曳位置
-let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -15); 
+let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -15);
+
+// 画布缩放相关变量（移动端）
+let initialDistance = 0;  // 初始双指距离
+let currentZoom = 1;      // 当前缩放级别
+const MIN_ZOOM = 0.5;     // 最小缩放（放大视野）
+const MAX_ZOOM = 3;       // 最大缩放（缩小视野） 
 
 // UI 元素
 const uiResult = document.getElementById("result-board");
@@ -53,10 +59,15 @@ function init() {
   );
   
   camera.position.set(50, 50, 50); 
-  camera.lookAt(0, 0, 0); 
+  camera.lookAt(0, 0, 0);
+  camera.zoom = currentZoom;  // 设置初始缩放
+  camera.updateProjectionMatrix(); 
 
   // 渲染器設定
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : 1; // 限制移动端像素比以提升性能
+  renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true }); // 移动端关闭抗锯齿以提升性能
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.domElement.style.touchAction = 'none'; 
   renderer.domElement.style.userSelect = 'none';
@@ -96,6 +107,11 @@ function init() {
   window.addEventListener("touchstart", onInputStart, { passive: false });
   window.addEventListener("touchmove", onInputMove, { passive: false });
   window.addEventListener("touchend", onInputEnd);
+  
+  // 移动端双指缩放
+  window.addEventListener("touchstart", onTouchStartZoom, { passive: false });
+  window.addEventListener("touchmove", onTouchMoveZoom, { passive: false });
+  window.addEventListener("touchend", onTouchEndZoom);
 
   // 骰子數量變更偵測
   const countSelect = document.getElementById("diceCount");
@@ -103,6 +119,12 @@ function init() {
       countSelect.addEventListener("change", (e) => {
         updateDiceCount(parseInt(e.target.value));
       });
+  }
+  
+  // 更新移动端提示文本
+  const hintElement = document.querySelector(".hint");
+  if (hintElement && isMobile) {
+    hintElement.textContent = "点击拖拽骰子 | 双指缩放画布";
   }
 }
 
@@ -113,6 +135,10 @@ function updateMousePosition(e) {
   if (e.changedTouches) {
     x = e.changedTouches[0].clientX;
     y = e.changedTouches[0].clientY;
+  } else if (e.touches && e.touches.length > 0) {
+    // 处理 touchmove 事件
+    x = e.touches[0].clientX;
+    y = e.touches[0].clientY;
   } else {
     x = e.clientX;
     y = e.clientY;
@@ -131,6 +157,11 @@ function onInputStart(e) {
   )
     return;
 
+  // 移动端：如果是双指触摸，不处理骰子拖拽（交给缩放处理）
+  if (e.touches && e.touches.length >= 2) {
+    return;
+  }
+
   if(e.preventDefault) e.preventDefault();
 
   isHolding = true;
@@ -147,15 +178,99 @@ function onInputStart(e) {
 }
 
 function onInputMove(e) {
+  // 移动端：如果是双指触摸，不处理骰子拖拽
+  if (e.touches && e.touches.length >= 2) {
+    return;
+  }
+  
   if (!isHolding) return;
   if(e.preventDefault) e.preventDefault();
   updateMousePosition(e);
 }
 
 function onInputEnd(e) {
+  // 移动端：如果是双指触摸结束，不处理骰子释放
+  if (e.touches && e.touches.length >= 2) {
+    return;
+  }
+  
   if (!isHolding) return;
   isHolding = false;
   releaseDice(); // 放開滑鼠，執行擲骰邏輯
+}
+
+// --- 画布缩放处理（移动端双指捏合） ---
+
+function getTouchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function onTouchStartZoom(e) {
+  // 只处理双指触摸
+  if (!e.touches || e.touches.length !== 2) {
+    return;
+  }
+  
+  // 排除 UI 区域
+  if (
+    e.target.tagName === "SELECT" ||
+    e.target.tagName === "LABEL" ||
+    e.target.closest(".top-bar")
+  ) {
+    return;
+  }
+  
+  e.preventDefault();
+  
+  // 如果正在拖拽骰子，取消拖拽状态（从单指变为双指）
+  if (isHolding) {
+    isHolding = false;
+  }
+  
+  initialDistance = getTouchDistance(e.touches);
+}
+
+function onTouchMoveZoom(e) {
+  // 只处理双指触摸
+  if (!e.touches || e.touches.length !== 2) {
+    return;
+  }
+  
+  // 排除 UI 区域
+  if (
+    e.target.tagName === "SELECT" ||
+    e.target.tagName === "LABEL" ||
+    e.target.closest(".top-bar")
+  ) {
+    return;
+  }
+  
+  e.preventDefault();
+  
+  const currentDistance = getTouchDistance(e.touches);
+  if (initialDistance > 0) {
+    const scale = currentDistance / initialDistance;
+    currentZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * scale));
+    
+    // 更新相机缩放
+    camera.zoom = currentZoom;
+    camera.updateProjectionMatrix();
+    
+    initialDistance = currentDistance; // 更新初始距离，实现连续缩放
+  }
+}
+
+function onTouchEndZoom(e) {
+  // 如果还有两个或更多手指，保持缩放状态
+  if (e.touches && e.touches.length >= 2) {
+    initialDistance = getTouchDistance(e.touches);
+    return;
+  }
+  
+  // 双指都离开，重置初始距离
+  initialDistance = 0;
 }
 
 // --- 物理與物體建立 ---
@@ -510,6 +625,12 @@ function onWindowResize() {
   camera.top = FRUSTUM_SIZE / 2;
   camera.bottom = -FRUSTUM_SIZE / 2;
 
+  // 保持当前缩放级别
+  camera.zoom = currentZoom;
   camera.updateProjectionMatrix();
+  
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : 1;
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
 }

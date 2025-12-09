@@ -90,3 +90,108 @@ select {
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .top-bar {
+    margin-top: 15px;
+    padding: 6px;
+    gap: 8px;
+  }
+
+  .bar-text {
+    font-size: 14px;
+    padding: 0 12px;
+    letter-spacing: 0.5px;
+  }
+
+  select {
+    padding: 3px 15px;
+    font-size: 14px;
+  }
+
+  #result-board {
+    margin-top: 20px;
+    font-size: 40px;
+  }
+
+  .sub-text {
+    font-size: 18px;
+    margin-top: 6px;
+  }
+
+  .hint {
+    bottom: 20px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .top-bar {
+    margin-top: 10px;
+    padding: 5px;
+    gap: 6px;
+    border-radius: 60px;
+  }
+
+  .bar-text {
+    font-size: 12px;
+    padding: 0 10px;
+  }
+
+  select {
+    padding: 2px 12px;
+    font-size: 12px;
+    border-radius: 15px;
+  }
+
+  #result-board {
+    margin-top: 15px;
+    font-size: 32px;
+  }
+
+  .sub-text {
+    font-size: 16px;
+    margin-top: 4px;
+  }
+
+  .hint {
+    bottom: 15px;
+    font-size: 11px;
+    padding: 0 10px;
+    text-align: center;
+  }
+}
+
+/* 横屏适配 */
+@media (max-height: 500px) and (orientation: landscape) {
+  .top-bar {
+    margin-top: 8px;
+    padding: 4px;
+  }
+
+  .bar-text {
+    font-size: 12px;
+    padding: 0 8px;
+  }
+
+  select {
+    padding: 2px 10px;
+    font-size: 12px;
+  }
+
+  #result-board {
+    margin-top: 10px;
+    font-size: 28px;
+  }
+
+  .sub-text {
+    font-size: 14px;
+  }
+
+  .hint {
+    bottom: 10px;
+    font-size: 10px;
+  }
+}
