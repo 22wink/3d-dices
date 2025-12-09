@@ -18,7 +18,12 @@ let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -15);
 let initialDistance = 0;  // 初始双指距离
 let currentZoom = 1;      // 当前缩放级别
 const MIN_ZOOM = 0.5;     // 最小缩放（放大视野）
-const MAX_ZOOM = 3;       // 最大缩放（缩小视野） 
+const MAX_ZOOM = 3;       // 最大缩放（缩小视野）
+
+// 移动端检测（全局变量）
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                 ('ontouchstart' in window) || 
+                 (navigator.maxTouchPoints > 0); 
 
 // UI 元素
 const uiResult = document.getElementById("result-board");
@@ -64,7 +69,6 @@ function init() {
   camera.updateProjectionMatrix(); 
 
   // 渲染器設定
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : 1; // 限制移动端像素比以提升性能
   renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true }); // 移动端关闭抗锯齿以提升性能
   renderer.setPixelRatio(pixelRatio);
@@ -189,8 +193,15 @@ function onInputMove(e) {
 }
 
 function onInputEnd(e) {
-  // 移动端：如果是双指触摸结束，不处理骰子释放
+  // 移动端：检查是否是双指触摸结束
+  // 在 touchend 事件中，e.touches 只包含仍然触摸的手指
+  // 如果 changedTouches 有多个，或者 touches 还有多个，说明是双指操作
+  if (e.changedTouches && e.changedTouches.length > 1) {
+    // 多个手指同时离开，可能是双指缩放结束
+    return;
+  }
   if (e.touches && e.touches.length >= 2) {
+    // 还有多个手指在屏幕上，说明是双指缩放
     return;
   }
   
@@ -223,6 +234,7 @@ function onTouchStartZoom(e) {
   }
   
   e.preventDefault();
+  e.stopPropagation(); // 阻止事件冒泡，避免触发其他触摸处理
   
   // 如果正在拖拽骰子，取消拖拽状态（从单指变为双指）
   if (isHolding) {
@@ -248,6 +260,7 @@ function onTouchMoveZoom(e) {
   }
   
   e.preventDefault();
+  e.stopPropagation(); // 阻止事件冒泡
   
   const currentDistance = getTouchDistance(e.touches);
   if (initialDistance > 0) {
@@ -629,7 +642,6 @@ function onWindowResize() {
   camera.zoom = currentZoom;
   camera.updateProjectionMatrix();
   
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : 1;
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
