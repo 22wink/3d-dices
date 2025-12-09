@@ -5,25 +5,28 @@ import * as CANNON from "https://esm.sh/cannon-es";
 // --- 全域變數設定 ---
 let scene, camera, renderer, world;
 let diceObjects = [];
-let isHolding = false;       // 是否正在拖曳中
+let isHolding = false; // 是否正在拖曳中
 let needsResultCheck = false; // 是否需要檢查停止並結算
 let mouse = new THREE.Vector2();
 let raycaster = new THREE.Raycaster();
 
-const FRUSTUM_SIZE = 23;     // 攝影機視角大小
+const FRUSTUM_SIZE = 23; // 攝影機視角大小
 // 拖曳平面：用來接收滑鼠射線，計算拖曳位置
 let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -15);
 
 // 画布缩放相关变量（移动端）
-let initialDistance = 0;  // 初始双指距离
-let currentZoom = 1;      // 当前缩放级别
-const MIN_ZOOM = 0.5;     // 最小缩放（放大视野）
-const MAX_ZOOM = 3;       // 最大缩放（缩小视野）
+let initialDistance = 0; // 初始双指距离
+let currentZoom = 1; // 当前缩放级别
+const MIN_ZOOM = 0.5; // 最小缩放（放大视野）
+const MAX_ZOOM = 3; // 最大缩放（缩小视野）
+let isZooming = false; // 是否正在进行双指缩放
+let releaseDiceTimer = null; // 延迟掷骰子的定时器
 
 // 移动端检测（全局变量）
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                 ('ontouchstart' in window) || 
-                 (navigator.maxTouchPoints > 0); 
+const isMobile =
+  /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+  "ontouchstart" in window ||
+  navigator.maxTouchPoints > 0;
 
 // UI 元素
 const uiResult = document.getElementById("result-board");
@@ -32,14 +35,20 @@ const uiDetail = document.getElementById("detail-score");
 
 // 顏色設定
 const palette = [
-  "#EAA14D", "#E05A47", "#4D9BEA", "#5FB376", 
-  "#D869A8", "#F2C94C", "#9B51E0", "#FFFFFF" 
+  "#EAA14D",
+  "#E05A47",
+  "#4D9BEA",
+  "#5FB376",
+  "#D869A8",
+  "#F2C94C",
+  "#9B51E0",
+  "#FFFFFF",
 ];
 
 const commonColors = {
   dots: "#FFFFFF",
   outline: "#725349",
-  shadow: "#F3BD2E"
+  shadow: "#F3BD2E",
 };
 
 // --- 程式入口 ---
@@ -52,7 +61,7 @@ function init() {
   scene.background = new THREE.Color("#F6F3EB");
 
   const aspect = window.innerWidth / window.innerHeight;
-  
+
   // 正交攝影機 (OrthographicCamera) 避免透視變形
   camera = new THREE.OrthographicCamera(
     (FRUSTUM_SIZE * aspect) / -2,
@@ -62,19 +71,19 @@ function init() {
     1,
     1000
   );
-  
-  camera.position.set(50, 50, 50); 
+
+  camera.position.set(50, 50, 50);
   camera.lookAt(0, 0, 0);
-  camera.zoom = currentZoom;  // 设置初始缩放
-  camera.updateProjectionMatrix(); 
+  camera.zoom = currentZoom; // 设置初始缩放
+  camera.updateProjectionMatrix();
 
   // 渲染器設定
   const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : 1; // 限制移动端像素比以提升性能
   renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true }); // 移动端关闭抗锯齿以提升性能
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.domElement.style.touchAction = 'none'; 
-  renderer.domElement.style.userSelect = 'none';
+  renderer.domElement.style.touchAction = "none";
+  renderer.domElement.style.userSelect = "none";
   document.body.appendChild(renderer.domElement);
 
   // 2. Cannon.js 物理世界設定
@@ -82,7 +91,7 @@ function init() {
   world.gravity.set(0, -40, 0); // 重力向下
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 20;
-  world.allowSleep = true; 
+  world.allowSleep = true;
 
   // 材質接觸設定 (定義彈性與摩擦力)
   const wallMat = new CANNON.Material();
@@ -90,7 +99,7 @@ function init() {
   world.addContactMaterial(
     new CANNON.ContactMaterial(wallMat, diceMat, {
       friction: 0.3,
-      restitution: 0.6
+      restitution: 0.6,
     })
   );
 
@@ -105,13 +114,13 @@ function init() {
   window.addEventListener("mousedown", onInputStart);
   window.addEventListener("mousemove", onInputMove);
   window.addEventListener("mouseup", onInputEnd);
-  
-  document.body.addEventListener("mouseleave", onInputEnd); 
-  
+
+  document.body.addEventListener("mouseleave", onInputEnd);
+
   window.addEventListener("touchstart", onInputStart, { passive: false });
   window.addEventListener("touchmove", onInputMove, { passive: false });
   window.addEventListener("touchend", onInputEnd);
-  
+
   // 移动端双指缩放
   window.addEventListener("touchstart", onTouchStartZoom, { passive: false });
   window.addEventListener("touchmove", onTouchMoveZoom, { passive: false });
@@ -119,12 +128,12 @@ function init() {
 
   // 骰子數量變更偵測
   const countSelect = document.getElementById("diceCount");
-  if(countSelect) {
-      countSelect.addEventListener("change", (e) => {
-        updateDiceCount(parseInt(e.target.value));
-      });
+  if (countSelect) {
+    countSelect.addEventListener("change", (e) => {
+      updateDiceCount(parseInt(e.target.value));
+    });
   }
-  
+
   // 更新移动端提示文本
   const hintElement = document.querySelector(".hint");
   if (hintElement && isMobile) {
@@ -166,18 +175,18 @@ function onInputStart(e) {
     return;
   }
 
-  if(e.preventDefault) e.preventDefault();
+  if (e.preventDefault) e.preventDefault();
 
   isHolding = true;
   needsResultCheck = false;
-  if(uiResult) uiResult.classList.remove("show");
+  if (uiResult) uiResult.classList.remove("show");
   updateMousePosition(e);
 
   // 開始拖曳時，喚醒骰子並給予一點隨機旋轉參數
-  diceObjects.forEach(obj => {
-      obj.body.wakeUp(); 
-      obj.spinOffset = Math.random() * 100; 
-      obj.isReturning = false; // 重置狀態：只要被抓起來就不是「回歸中」
+  diceObjects.forEach((obj) => {
+    obj.body.wakeUp();
+    obj.spinOffset = Math.random() * 100;
+    obj.isReturning = false; // 重置狀態：只要被抓起來就不是「回歸中」
   });
 }
 
@@ -186,9 +195,9 @@ function onInputMove(e) {
   if (e.touches && e.touches.length >= 2) {
     return;
   }
-  
+
   if (!isHolding) return;
-  if(e.preventDefault) e.preventDefault();
+  if (e.preventDefault) e.preventDefault();
   updateMousePosition(e);
 }
 
@@ -204,10 +213,31 @@ function onInputEnd(e) {
     // 还有多个手指在屏幕上，说明是双指缩放
     return;
   }
-  
+
   if (!isHolding) return;
-  isHolding = false;
-  releaseDice(); // 放開滑鼠，執行擲骰邏輯
+
+  // 移动端：添加延迟，避免在双指操作时误触发
+  if (isMobile && e.changedTouches) {
+    // 清除之前的定时器
+    if (releaseDiceTimer) {
+      clearTimeout(releaseDiceTimer);
+      releaseDiceTimer = null;
+    }
+
+    // 延迟执行掷骰子，给用户时间放下第二根手指
+    isHolding = false;
+    releaseDiceTimer = setTimeout(() => {
+      // 如果在这期间开始了双指缩放，取消掷骰子
+      if (!isZooming) {
+        releaseDice();
+      }
+      releaseDiceTimer = null;
+    }, 300); // 300ms 延迟
+  } else {
+    // 桌面端：立即执行
+    isHolding = false;
+    releaseDice();
+  }
 }
 
 // --- 画布缩放处理（移动端双指捏合） ---
@@ -223,7 +253,7 @@ function onTouchStartZoom(e) {
   if (!e.touches || e.touches.length !== 2) {
     return;
   }
-  
+
   // 排除 UI 区域
   if (
     e.target.tagName === "SELECT" ||
@@ -232,15 +262,24 @@ function onTouchStartZoom(e) {
   ) {
     return;
   }
-  
+
   e.preventDefault();
   e.stopPropagation(); // 阻止事件冒泡，避免触发其他触摸处理
-  
+
+  // 标记正在进行双指缩放
+  isZooming = true;
+
+  // 取消延迟的掷骰子操作
+  if (releaseDiceTimer) {
+    clearTimeout(releaseDiceTimer);
+    releaseDiceTimer = null;
+  }
+
   // 如果正在拖拽骰子，取消拖拽状态（从单指变为双指）
   if (isHolding) {
     isHolding = false;
   }
-  
+
   initialDistance = getTouchDistance(e.touches);
 }
 
@@ -249,7 +288,7 @@ function onTouchMoveZoom(e) {
   if (!e.touches || e.touches.length !== 2) {
     return;
   }
-  
+
   // 排除 UI 区域
   if (
     e.target.tagName === "SELECT" ||
@@ -258,19 +297,22 @@ function onTouchMoveZoom(e) {
   ) {
     return;
   }
-  
+
   e.preventDefault();
   e.stopPropagation(); // 阻止事件冒泡
-  
+
+  // 确保标记为缩放状态
+  isZooming = true;
+
   const currentDistance = getTouchDistance(e.touches);
   if (initialDistance > 0) {
     const scale = currentDistance / initialDistance;
     currentZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * scale));
-    
+
     // 更新相机缩放
     camera.zoom = currentZoom;
     camera.updateProjectionMatrix();
-    
+
     initialDistance = currentDistance; // 更新初始距离，实现连续缩放
   }
 }
@@ -279,11 +321,19 @@ function onTouchEndZoom(e) {
   // 如果还有两个或更多手指，保持缩放状态
   if (e.touches && e.touches.length >= 2) {
     initialDistance = getTouchDistance(e.touches);
+    isZooming = true; // 保持缩放状态
     return;
   }
-  
-  // 双指都离开，重置初始距离
+
+  // 双指都离开，延迟重置缩放状态
+  // 这样可以避免在用户放下第二根手指时误触发单指操作
   initialDistance = 0;
+  setTimeout(() => {
+    // 再次检查是否真的没有手指了
+    if (!e.touches || e.touches.length === 0) {
+      isZooming = false;
+    }
+  }, 200);
 }
 
 // --- 物理與物體建立 ---
@@ -322,19 +372,20 @@ function createVectorDiceTexture(number, colorHex) {
   ctx.fillStyle = colorHex;
   ctx.fillRect(0, 0, size, size);
 
-  const isTraditional = (colorHex === "#FFFFFF"); // 常見的紅白點骰子
+  const isTraditional = colorHex === "#FFFFFF"; // 常見的紅白點骰子
 
   let dotColor = commonColors.dots;
   if (isTraditional) {
     if (number === 1) dotColor = "#E03E3E"; // 1點紅色
-    else if (number === 4) dotColor = "#E03E3E"; 
-    else dotColor = "#331e18"; 
+    else if (number === 4) dotColor = "#E03E3E";
+    else dotColor = "#331e18";
   }
 
   ctx.fillStyle = dotColor;
 
   const dotSize = size / 5;
-  const currentDotSize = (isTraditional && number === 1) ? dotSize * 1.5 : dotSize;
+  const currentDotSize =
+    isTraditional && number === 1 ? dotSize * 1.5 : dotSize;
 
   const center = size / 2;
   const q1 = size / 4;
@@ -348,11 +399,32 @@ function createVectorDiceTexture(number, colorHex) {
 
   // 根據點數繪製圓點
   if (number === 1) drawDot(center, center);
-  else if (number === 2) { drawDot(q1, q1); drawDot(q3, q3); }
-  else if (number === 3) { drawDot(q1, q1); drawDot(center, center); drawDot(q3, q3); }
-  else if (number === 4) { drawDot(q1, q1); drawDot(q3, q1); drawDot(q1, q3); drawDot(q3, q3); }
-  else if (number === 5) { drawDot(q1, q1); drawDot(center, center); drawDot(q1, q3); drawDot(q3, q3); drawDot(q3, q1); }
-  else if (number === 6) { drawDot(q1, q1); drawDot(q3, q1); drawDot(q1, center); drawDot(q3, center); drawDot(q1, q3); drawDot(q3, q3); }
+  else if (number === 2) {
+    drawDot(q1, q1);
+    drawDot(q3, q3);
+  } else if (number === 3) {
+    drawDot(q1, q1);
+    drawDot(center, center);
+    drawDot(q3, q3);
+  } else if (number === 4) {
+    drawDot(q1, q1);
+    drawDot(q3, q1);
+    drawDot(q1, q3);
+    drawDot(q3, q3);
+  } else if (number === 5) {
+    drawDot(q1, q1);
+    drawDot(center, center);
+    drawDot(q1, q3);
+    drawDot(q3, q3);
+    drawDot(q3, q1);
+  } else if (number === 6) {
+    drawDot(q1, q1);
+    drawDot(q3, q1);
+    drawDot(q1, center);
+    drawDot(q3, center);
+    drawDot(q1, q3);
+    drawDot(q3, q3);
+  }
   return new THREE.CanvasTexture(canvas);
 }
 
@@ -371,29 +443,46 @@ function updateDiceCount(count) {
     }
   });
   diceObjects = [];
-  if(uiResult) uiResult.classList.remove("show");
+  if (uiResult) uiResult.classList.remove("show");
 
   // 建立新骰子幾何體
   const boxSize = 2.5;
   const geometry = new RoundedBoxGeometry(boxSize, boxSize, boxSize, 4, 0.4);
   const outlineGeo = geometry.clone();
   const shadowGeo = new THREE.CircleGeometry(boxSize * 0.6, 32);
-  const shape = new CANNON.Box(new CANNON.Vec3(boxSize / 2, boxSize / 2, boxSize / 2));
-  
-  const outlineMat = new THREE.MeshBasicMaterial({ color: commonColors.outline, side: THREE.BackSide });
-  const shadowMat = new THREE.MeshBasicMaterial({ color: commonColors.shadow, transparent: true, opacity: 0.2 });
+  const shape = new CANNON.Box(
+    new CANNON.Vec3(boxSize / 2, boxSize / 2, boxSize / 2)
+  );
+
+  const outlineMat = new THREE.MeshBasicMaterial({
+    color: commonColors.outline,
+    side: THREE.BackSide,
+  });
+  const shadowMat = new THREE.MeshBasicMaterial({
+    color: commonColors.shadow,
+    transparent: true,
+    opacity: 0.2,
+  });
 
   for (let i = 0; i < count; i++) {
     const randomColor = palette[Math.floor(Math.random() * palette.length)];
     const diceMaterials = [];
     for (let j = 1; j <= 6; j++) {
-      diceMaterials.push(new THREE.MeshBasicMaterial({ map: createVectorDiceTexture(j, randomColor) }));
+      diceMaterials.push(
+        new THREE.MeshBasicMaterial({
+          map: createVectorDiceTexture(j, randomColor),
+        })
+      );
     }
-    
+
     // 調整材質順序以匹配 Cube UV 對應
     const matArray = [
-      diceMaterials[0], diceMaterials[5], diceMaterials[1], 
-      diceMaterials[4], diceMaterials[2], diceMaterials[3]
+      diceMaterials[0],
+      diceMaterials[5],
+      diceMaterials[1],
+      diceMaterials[4],
+      diceMaterials[2],
+      diceMaterials[3],
     ];
 
     const mesh = new THREE.Mesh(geometry, matArray);
@@ -414,13 +503,24 @@ function updateDiceCount(count) {
       mass: 5,
       shape: shape,
       position: new CANNON.Vec3(startX, boxSize, 0),
-      sleepSpeedLimit: 0.5
+      sleepSpeedLimit: 0.5,
     });
-    body.quaternion.setFromEuler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    body.quaternion.setFromEuler(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI,
+      Math.random() * Math.PI
+    );
     world.addBody(body);
 
     // 加入 isReturning 屬性，預設為 false
-    diceObjects.push({ mesh, outline, shadow, body, spinOffset: 0, isReturning: false });
+    diceObjects.push({
+      mesh,
+      outline,
+      shadow,
+      body,
+      spinOffset: 0,
+      isReturning: false,
+    });
   }
 }
 
@@ -431,10 +531,10 @@ function releaseDice() {
 
   diceObjects.forEach((obj) => {
     const { body } = obj;
-    
+
     // 檢查是否超出牆壁範圍
-    const isOutside = 
-      Math.abs(body.position.x) > SAFE_LIMIT || 
+    const isOutside =
+      Math.abs(body.position.x) > SAFE_LIMIT ||
       Math.abs(body.position.z) > SAFE_LIMIT;
 
     if (isOutside) {
@@ -458,12 +558,12 @@ function releaseDice() {
 function applyThrowForce(body) {
   const xDist = -body.position.x;
   const zDist = -body.position.z;
-  
+
   // 根據距離施加反向力道，加上隨機擾動
   body.velocity.set(
-    xDist * 1.5 + (Math.random() - 0.5) * 15, 
+    xDist * 1.5 + (Math.random() - 0.5) * 15,
     -15 - Math.random() * 10, // 向下丟
-    zDist * 1.5 + (Math.random() - 0.5) * 15  
+    zDist * 1.5 + (Math.random() - 0.5) * 15
   );
 
   // 隨機旋轉力道
@@ -477,12 +577,15 @@ function applyThrowForce(body) {
 function calculateResult() {
   let total = 0;
   let details = [];
-  
+
   // 定義骰子六個面的法向量與對應點數
   const faceNormals = [
-    new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-    new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
-    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, -1, 0),
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(0, 0, -1),
   ];
   const faceValues = [1, 6, 2, 5, 3, 4];
 
@@ -503,9 +606,10 @@ function calculateResult() {
     details.push(resultValue);
   });
 
-  if(uiTotal) uiTotal.innerText = total;
-  if(uiDetail) uiDetail.innerText = details.length > 1 ? `(${details.join(" + ")})` : "";
-  if(uiResult) uiResult.classList.add("show");
+  if (uiTotal) uiTotal.innerText = total;
+  if (uiDetail)
+    uiDetail.innerText = details.length > 1 ? `(${details.join(" + ")})` : "";
+  if (uiResult) uiResult.classList.add("show");
   needsResultCheck = false;
 }
 
@@ -521,37 +625,39 @@ function animate() {
     const intersect = raycaster.ray.intersectPlane(dragPlane, targetPoint);
 
     if (intersect) {
-        const time = performance.now() * 0.01;
+      const time = performance.now() * 0.01;
 
-        diceObjects.forEach((obj, i) => {
-            const offsetX = Math.sin(time + i) * 1.0; 
-            const offsetZ = Math.cos(time + i * 2) * 1.0;
+      diceObjects.forEach((obj, i) => {
+        const offsetX = Math.sin(time + i) * 1.0;
+        const offsetZ = Math.cos(time + i * 2) * 1.0;
 
-            // 不限制範圍，讓使用者可以隨意拖曳
-            obj.body.position.x += (targetPoint.x + offsetX - obj.body.position.x) * 0.25;
-            obj.body.position.y += (15 - obj.body.position.y) * 0.25; 
-            obj.body.position.z += (targetPoint.z + offsetZ - obj.body.position.z) * 0.25;
+        // 不限制範圍，讓使用者可以隨意拖曳
+        obj.body.position.x +=
+          (targetPoint.x + offsetX - obj.body.position.x) * 0.25;
+        obj.body.position.y += (15 - obj.body.position.y) * 0.25;
+        obj.body.position.z +=
+          (targetPoint.z + offsetZ - obj.body.position.z) * 0.25;
 
-            // 拖曳時讓它旋轉展示
-            obj.body.quaternion.setFromEuler(
-                time * 2 + obj.spinOffset,
-                time * 3 + obj.spinOffset,
-                time * 1.5
-            );
+        // 拖曳時讓它旋轉展示
+        obj.body.quaternion.setFromEuler(
+          time * 2 + obj.spinOffset,
+          time * 3 + obj.spinOffset,
+          time * 1.5
+        );
 
-            // 歸零物理速度，完全由滑鼠控制
-            obj.body.velocity.set(0, 0, 0);
-            obj.body.angularVelocity.set(0, 0, 0);
-            
-            // 確保拖曳時不是「回歸」狀態
-            obj.isReturning = false;
-        });
+        // 歸零物理速度，完全由滑鼠控制
+        obj.body.velocity.set(0, 0, 0);
+        obj.body.angularVelocity.set(0, 0, 0);
+
+        // 確保拖曳時不是「回歸」狀態
+        obj.isReturning = false;
+      });
     }
   } else {
     // --- 情況 2: 放開滑鼠後 ---
 
     const time = performance.now() * 0.01;
-    
+
     // 檢查是否有骰子需要「飛回來」
     diceObjects.forEach((obj) => {
       if (obj.isReturning) {
@@ -559,7 +665,7 @@ function animate() {
         // 0.15 是移動速度係數，數值越大飛越快
         obj.body.position.x += (0 - obj.body.position.x) * 0.15;
         obj.body.position.z += (0 - obj.body.position.z) * 0.15;
-        
+
         // 保持高度，形成拋物線感覺
         obj.body.position.y += (12 - obj.body.position.y) * 0.1;
 
@@ -571,9 +677,12 @@ function animate() {
         obj.body.angularVelocity.set(0, 0, 0);
 
         // 【關鍵判斷】如果已經飛進安全區域 (座標小於 9)
-        if (Math.abs(obj.body.position.x) < 9 && Math.abs(obj.body.position.z) < 9) {
-          obj.isReturning = false;   // 停止手動動畫
-          obj.body.wakeUp();         // 喚醒物理引擎
+        if (
+          Math.abs(obj.body.position.x) < 9 &&
+          Math.abs(obj.body.position.z) < 9
+        ) {
+          obj.isReturning = false; // 停止手動動畫
+          obj.body.wakeUp(); // 喚醒物理引擎
           applyThrowForce(obj.body); // 施加最後的落地力道
         }
       }
@@ -632,7 +741,7 @@ function animate() {
 
 function onWindowResize() {
   const aspect = window.innerWidth / window.innerHeight;
-  
+
   camera.left = (-FRUSTUM_SIZE * aspect) / 2;
   camera.right = (FRUSTUM_SIZE * aspect) / 2;
   camera.top = FRUSTUM_SIZE / 2;
@@ -641,7 +750,7 @@ function onWindowResize() {
   // 保持当前缩放级别
   camera.zoom = currentZoom;
   camera.updateProjectionMatrix();
-  
+
   const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : 1;
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
