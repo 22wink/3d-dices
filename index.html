@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3d dice</title>
+    <link rel="stylesheet" href="main.css">
+</head>
+
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://esm.sh/three@0.160.0",
+                "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+                "cannon-es": "https://esm.sh/cannon-es@0.20.0"
+            }
+        }
+    </script>
+    <div id="ui-container">
+        <div class="top-bar">
+            <p class="bar-text">DICE COUNT</p>
+            <label class="select">
+                <select id="diceCount">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                </select>
+            </label>
+        </div>
+
+        <div id="result-board">
+            <span id="total-score">0</span>
+            <span class="sub-text" id="detail-score"></span>
+        </div>
+
+        <div class="hint">Click anywhere to roll</div>
+    </div>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
